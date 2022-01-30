@@ -1,0 +1,150 @@
+Policy gradient就是直接去求最优的概率分布 一个由state映射到action的概率分布
+缺点：
+Policy gradient会让分布往期望更大的分布 拟合(靠近), 这样会导致high variance (lecture5 p16)
+bias的变化会让分布有很大的变化
+
+1. 分析policy gradient的公式，t时刻前的reward对t时刻会有影响
+由于t时刻前的reward会对t时刻不应该有影响(makrov property) 所以在 t时刻 应该只考虑“reward to go”
+
+2. 为了减小variance 就要减小bias 于是引入了baseline = expected( traj reward )
+
+On-Policy vs Off-Policy
+Policy Gradient 是根据当前policy分布生成的traj来更新
+相当于online更新， 这样做效率很低 因为梯度更新每次只更新一点 相当于online-learning
+
+Off-policy 相当于offline-learning， 可以用之前的policy生成的数据来更新
+因为要用之前policy生成的data， 要用importance sampling
+对于比较进的分布 由于没有很大区别 可以直接按on-policy的公式进行梯度更新
+对于比较远的分布 必须要加上比值差别alpha(lec5 p23)
+考虑因果关系 future actions don't affect current weight,所以t时刻只用考取前t时刻的权重比
+其实可以考虑KL-div的公式来理解这个比值的意义
+
+然鹅这个比值alpha是t个值相乘 不是很友好
+由于生成sample时时生成trajectory就是pairs of (state,action) 当你对i时刻的分布进行更新时
+之前的old distribution和new distribution的区别可以忽略 座椅直接拿在t时刻生成之前数据(s_t , a_t)的概率
+然而s_t已经是确定的了 所以就是两个分布下有s_t的情况下 a_t出现的概率的比值(lec5 p26)
+
+其他问题: gradient decent时有问题 gradient并不指向goal
+可能要用KL divergence， 也只是optimization问题
+
+
+
+lec 6
+Actor-Critic Algo : 根据Q,Vfunction来更新policy gradient
+
+policy gradient是直接估计给定state时 求最优的action分布是什么
+reward to go并不是很准 variance很大，我们想要得到更加准确的estimation
+引入Q function Q(s,a) :在s下 选action a 能得到的expected reward-to-go 
+可以用Q function来进行梯度更新
+
+还要引入baseline来减低variance 于是引入V function
+V function: average reward to go at state S: V(S)
+于是Q-V就变为了A function， advantage function
+
+由Q V的关系可以得到一个approximation: A(s,a) = r(s,a) + V( s_t+1 ) - V(s_t)
+这样计算的A只取决于state 没有很多action参与 减少了计算
+
+求V的准确值其实很难 于是对V的值进行近似
+让V(s_t) = "raward to go " start from time t
+于是可以训练网络来拟合V 一开始是不对的 但是随着数据增多 值会越来越准
+
+由于V函数时对"reward to go"的拟合， 如果步长太大 值就很大，V函数里就会有很多值是很大的
+于是引入discount factor， 让更远未来的reward值变小
+V(s_t) = r(s_t,a) + discount_factor * V(s_t+1)
+
+很明显，这样做variance很高 所以算V的时候最好要多条traj 或者多个点并行得跑 来降低variance
+注意更新函数 应该只在reward前面有discount_factor, 二球在时间t时 所有的discount_factor的幂要减t
+
+lec7
+value function methods:  Q
+放弃求distribution， 在当前状态下每次取值直接取A function 最高的action，如何求V func？
+用大量的数据直接求V func的值(求出V就求出了Q func和A func)
+然而V function不是很好求 因为要跑所有的action，而且要算next state， 如果没有状态转移信息就不是很好算
+于是开始直接算Q func， 求出了Q func， V func A func都可以求 -> Q-iteration
+
+Q-iteration -> Fitted Q-iteration -> Online Q-learning
+collect data{ si, ai , si', ri } (来自以往的policy)
+用同样的数据 更新Q值多 
+重复K次 可以得到更准的Q (为了让Q func 收敛) 后面准的Q value往前传需要多迭代几次
+然而Q-iteration是在拟合optimal Q-function, 当用于拟合的NN效果很好时(error接近0)的售后 这个方法是可以的
+然而由于训练NN的target value实际上是一直在变得 所以拟合的error实际上是很大的 
+所以这样就GG了因为每次不一定能选到最优的action
+
+Fitted Q-iteration -> Online Q-learning
+在线选action， 得到 data{ si, ai , si', ri } 后 直接更新(只更新一次)
+由于每次选action 只选argmax 为了增加exploration， 得随机选其他action 让Q function更准
+
+lec8
+ data{ si, ai , si', ri } 中 si,si' 是correlated的 
+对 online-Q learning 来说local overfitting很严重
+overfitting会导致一旦尝试了小概率的点 target value就会一直在变
+对此 可以建立buffer 记录以往的data{ si, ai , si', ri } 数据
+每次从buffer里随机取一批，这样就降低了si和si'的correlation
+取出一批往期数据后进行一次梯度更新
+取数据再进行一个梯度更新这个步骤可以重复K次 K一般是1
+
+用buffer解决了数据间的correlation 但是 target value一直在变(当前的Q func值一直在变) 
+不像Q-iteration 有一个固定的y值 Qlearning是直接拿r和next_Q的值进行训练这就让训练十分困难
+为了让训练方便 更快converge,就不能让target value里的Q_value变化 所以就得将当前网络复制 拿另一个网络进行梯度更新
+DQN: 为了更快converge,每N步才更新target net，
+每取一批数据用target net算得一次target value后进行一次梯度更新，这个过程重复N次之后再让target net变为当前训练的train net
+这样更容易converge
+
+其实Q-learning和DQN只是一些更新所用数据和步长设定上的不同
+他们得到的Q func和真实的Q-func还是有出入的，总是比真实的Q-fun的值大一些
+因为在训练Q func时 yi = r(si,ai) + max Q( si' , ai' ).
+Q func是个expectation，等式右边的Q值是有noise的 E [ max(X1,X2) ] >= max( E[X1] , E[X2] )
+所以得到的Q-func往往比真实值要大
+为了解决这个问题，引入了Double Q-learning为了
+为了让noise更小，我们use different network to choose action and evaluate value
+进行梯度更新时 用
+QA(s,a) = r + discount_factor* QB(s' , argmax_QA(s',a') )
+QB(s,a) = r + discount_factor* QA(s' , argmax_QB(s',a') )
+进行训练， QA QB理论上是对同一个Q进行approx 但是这样能有效降低noise
+
+但是单步还是存在bias较大的问题 所以得多执行几部得到更准的target_value
+QA(s,a) = sigma {r} 往后走k步
++ discount_factor* QB(s' , argmax_QA(s',a') )
+
+lec 11 12
+model-based model-free的差别在于planning的时候是否用到model， 
+LQR这种用dynamic递推 就是model-based
+Q-learning直接拟合Q func就是model-free
+在没有确定state-trans-model时 不论model-based还是model-free都需要一个模型来预测下一个状态
+状态预测无法避免系统噪音，只能用ensenmble bootstrap来预测
+训练每个dynamic model时应用不同的历史数据 来降低耦合度
+
+
+lec 13 14
+exploration 3种主流方法:
+
+1: optimiztic 探索 argmax{  miu(a) + C*sigma(a) }
+reward: reward to go
+miu(a) = expected reward of action {a}
+sigma(a) = variance of the reward of action {a}
+
+比较简单 可以让r'(s,a) = r(s,a) + B(N(s)) 代替基础的r(s,a)
+N(s) 是到达状态s的次数
+B是bonus func 对应上面的 C*sigma(a)，虽然不是关于a的函数 但是只要随N(a)的增加而降低就可以了
+有时候S是continuous空间的状态，不能准确计数，得用函数或者NN去求分布
+
+
+2:probability posterier sampling
+根据已有的model进行sampling 并选择最优action
+然后根据得到的结果 update model
+
+根据当前model(Q func)进行sampling很难
+p(Q)是一个关于function的distribution，只能用 ensemble net
+
+3:information gain
+根据当前model计算每次选择action {a}后, {a}对policy的影响 : g(a) :选择a后得到了多少关于policy的信息
+delta(a) : suboptimality of action {a}: E( r(a*) - r(a) ) : r() reward to go
+选择 argmin{ delta(a) ^2 /  g(a) }
+
+lec15
+为了提高efficiency，现在想使用过去收集的{s,a,s',r}数据集来代替Q-learning里的在线维护buffer
+这样数据可以更多,可是效果并没变好，实验显示并没有learning
+导致这种情况是由于Q-learning需要新的{s,a,s',r}来更新Q func,但是offline RL里并没有新数据
+Offline Q-learning在更新Q-func时用的时近期的{s,a,s',r} 而dataset里并不是近期数据，都是提前收录的固定数据
+这就导致Offline Q-learning 过度optimistic
+为了解决这个问题 只能限定更新Q-func时用的policy和 dataset数据所包含的policy不能相差太大
