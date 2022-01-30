@@ -148,3 +148,50 @@ lec15
 Offline Q-learning在更新Q-func时用的时近期的{s,a,s',r} 而dataset里并不是近期数据，都是提前收录的固定数据
 这就导致Offline Q-learning 过度optimistic
 为了解决这个问题 只能限定更新Q-func时用的policy和 dataset数据所包含的policy不能相差太大
+但是这样只会让policy无法大幅更新
+这就要求我们改变dataset数据所对应的policy
+我们发现，optimal policy是在一定的范围内，就是在某个distribution范围内 于是引入pessimistic cost
+pessimistic cost：当数据 { s , a } 在optimal policy内时保持原来的reward， 如果在范围外则要加pessimistic cost
+这个方法的关键就是指定一个lower_bound policy, lowerbound之外加pessimistic cost
+
+CQL: conservative Q-Learning algo: 找一个lower bound policy
+Q_lowerbound = minimize big Q-value term + ratio* standard Bellman Erro term ：CQL-v1
+ratio * 安全区域D内的 E(Q - 整体数据所包含的Q) 相当于一个边界
+这个使 所有在lowerbound内的Q 都比Q_lowerbound的值大
+
+然而这个lowerbound太宽了 ，为了有一个better choice
+Q_lowerbound = minimize big Q-value term - maximize data Q-values + ratio* standard Bellman Erro term ：CQL-v2
+相当于拿data的Q func 做了个参照
+这使得 lowerbound内 所有V值都比V_lowerbound大
+
+Practical CQL Algo: 为了能使用梯度更新
+max要改成softmax 具体公式看PPT
+
+
+lec18 Variational inference
+首先如果我们有这么一个分布，很自然的，我们可以假设它是gaussian distribution，然后求解mean和variance
+如果有下面这样的一批数据，我们已知它们可以被分为三个部分，可以假设它是来自三个gaussian distribution，
+那么就可以分别估计三个mean/variance，从而建模.
+但是问题来了，如果我们并不知道它们是来自三个gaussian distribution，
+我们也许会尝试用一个gaussian进行建模，这样就可能导致建模的结果不准
+
+那么是否能有更好的方法呢？这也就是引入latent variable的原因，我们可以假设某一批数据是由多个distribution组合而成，
+latent variable z 则是用于描述每个样本分别由每个分布生成得到的概率，
+可以理解为RNN里的context信息
+p(x|z)是在context为Z时 数据x分布产生的概率，p(z)是分布z发生的概率 相当于一个权重
+
+N个guassian模型叠在一起形成了数据Z的真实分布 相当于一个latent variable generative model
+得到latent variable后输入predict网络 输出x
+
+故而一个样本x的概率就可以描述为:
+它是任意一个分布的概率p(z)乘以在这个分布下能够生成这个样本的概率p(x|z)对所有分布的求和
+
+目的是为了得到generative model， 通过公式可以得到
+求这个generative model就只能先以现有的N个估计的guassian distrib更新predict model:给定z得到x的最优网络
+再根据predict model 求最优的latent variable generative model
+重复直至converge 但是请注意这要为每个数据点建立latent variable model，参数过多 详情见PPT lec18
+所以干脆建立NN 来预测给定x时 latent variable的分布(一个正态分布，NN只用根据x预测mean和variance)
+https://zhuanlan.zhihu.com/p/105322343
+这样的话跟心latent variable model就是类似于policy gradient的更新 缺点是high variance 需要大量的sample
+于是这里用reparameterization 对latent variable进行标准化 这样就可以很容易得求expectation了
+因为都是按正态分布生成的噪音再变到latent variable model里生成data
